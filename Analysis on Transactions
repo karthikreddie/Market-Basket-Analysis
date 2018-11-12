@@ -1,0 +1,91 @@
+library(tidyverse)
+library(arules)
+library(arulesViz)
+library(readxl)
+library(knitr)
+library(ggplot2)
+library(lubridate)
+
+
+transactions = read.csv('MBAnalysis.csv', stringsAsFactors = F)
+colnames(transactions)[1] = 'InvoiceNo'
+str(transactions)
+names(transactions)
+summary(transactions)
+transactions$Country = NULL
+
+
+transactions$Date = as.Date(transactions$InvoiceDate)
+transactions$Time = format(as.POSIXct(transactions$InvoiceDate), format = "%H:%M:%S")
+
+transactions$Time = as.factor(transactions$Time)
+
+glimpse(transactions)
+a = hms(as.character(transactions$Time))
+transactions$Time = hour(a)
+
+
+transactions %>% 
+  ggplot(aes(x = Time))+
+  geom_histogram(stat = 'count', fill = 'indianred')
+
+
+detach("package:plyr", unload = T)
+
+transactions %>% 
+  group_by(InvoiceNo) %>% 
+  summarize(n_items = mean(Quantity)) %>%
+  ggplot(aes(x=n_items))+
+  geom_histogram(fill="indianred", bins = 100000) + 
+  geom_rug()+
+  coord_cartesian(xlim=c(0,80))
+
+transactions %>% 
+  group_by(InvoiceNo)%>%
+  summarize(n_items = mean(Quantity))%>%
+  ggplot(aes(x = n_items))+
+  geom_histogram(fill = "indianred", bins = 100000)+
+  geom_rug()+
+  coord_cartesian(xlim = c(0,80))
+
+
+tmp <- transactions %>% 
+  group_by(StockCode, Description) %>% 
+  summarize(count = n()) %>% 
+  arrange(desc(count))
+tmp <- head(tmp, n=10)
+tmp
+tmp %>% 
+  ggplot(aes(x=reorder(Description,count), y=count))+
+  geom_bar(stat="identity",fill="indian red")+
+  coord_flip()
+
+transactions_sorted <- transactions[order(transactions$CustomerID),]
+library(plyr)
+itemList <- ddply(transactions,c("CustomerID","Date"), 
+                  function(df1)paste(df1$Description, 
+                                     collapse = ","))
+
+itemList$CustomerID <- NULL
+itemList$Date <- NULL
+colnames(itemList) <- c("items")
+
+write.csv(itemList,"market_basket.csv", quote = FALSE, row.names = TRUE)
+
+
+tr <- read.transactions('market_basket.csv', format = 'basket', sep=',')
+tr
+summary(tr)
+
+itemFrequencyPlot(tr, topN=20, type='absolute')
+
+rules <- apriori(tr, parameter = list(supp=0.001, conf=0.008))
+rules <- sort(rules, by='confidence', decreasing = TRUE)
+summary(rules)
+inspect(rules[1:10])
+
+topRules <- rules[1:10]
+plot(topRules)
+plot(topRules, method="graph")
+
+plot(topRules, method = "grouped")
